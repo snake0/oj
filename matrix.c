@@ -85,11 +85,9 @@ void print_cliques(cliques_t *cliques) {
     size_t size, i;
     if (cliques) {
         size = cliques->size;
-        printf("--Begin Cliques\n");
         for (i = 0; i < size; ++i) {
             print_clique(cliques->csp[i]);
         }
-        printf("--End Cliques\n");
     } else {
         printf("NULL in print_cliques!\n");
     }
@@ -109,66 +107,27 @@ int clique_distance(clique_t *c1, clique_t *c2) {
     return distance;
 }
 
-clique_t *malloc_clique(void) {
-    clique_t *ret = (clique_t *) malloc(sizeof(clique_t));
-    if (!ret) {
-        printf("Malloc error in malloc_clique\n");
-        return NULL;
-    }
-    ret->size = NTHREADS;
-    ret->pids = (int *) malloc(sizeof(int) * ret->size);
-    if (!ret->pids) {
-        printf("Malloc error in malloc_clique\n");
-        free(ret);
-        return NULL;
-    }
-    return ret;
-}
-
-void free_clique(clique_t *clique) {
-    if (clique) {
-        free(clique->pids);
-        free(clique);
-    }
-    else {
-        printf("NULL in free_clique\n");
-    }
-}
-
-cliques_t *init_cliques(void) {
-
-}
-
 int main() {
-//    int i;
-//    cliques_t *cliques;
-//
-//    cliques = (cliques_t *) malloc(sizeof(cliques_t));
-//    link_sched_print_matrix(link_sched_comm);
-//
-//    cliques->size = NTHREADS;
-//    cliques->csp = (clique_t **) malloc(cliques->size * sizeof(clique_t *));
-//
-//    for (i = 0; i < NTHREADS; ++i) {
-//        cliques->csp[i] = (clique_t *) malloc(sizeof(clique_t));
-//        cliques->csp[i]->pids = (int *)
-//                malloc(sizeof(int) * (NTHREADS / num_nodes));
-//        cliques->csp[i]->pids[0] = i;
-//        cliques->csp[i]->size = 1;
-//    }
-//    print_cliques(cliques);
-//
-////    while (cliques->size > num_nodes) {
-////        print_cliques(cliques);
-////
-////    }
-//
-//    for (i = 0; i < NTHREADS; ++i) {
-//        free(cliques->csp[i]->pids);
-//        cliques->csp[i]->pids = NULL;
-//        free(cliques->csp[i]);
-//    }
-//    free(cliques->csp);
-//    free(cliques);
-int *p = malloc(10);
+    int i;
+    cliques_t *cliques;
+    clique_t **cliques_temp;
+
+    cliques = (cliques_t *) malloc(sizeof(cliques_t));
+    cliques->size = NTHREADS;
+    cliques->csp = (clique_t **) malloc(sizeof(clique_t*) * NTHREADS);
+    cliques_temp = (clique_t **) malloc(sizeof(clique_t*) * NTHREADS / 2);
+
+    for (i = 0;i< cliques->size; ++i) {
+        cliques->csp[i] = (clique_t *) malloc(sizeof(clique_t))
+    }
+
+    link_sched_print_matrix(link_sched_comm);
+
+    while (cliques->size > num_nodes) {
+        printf("----------------\n");
+
+    }
+
+    free_cliques(cliques);
+    free(cliques_temp);
 }
