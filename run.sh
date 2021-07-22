@@ -8,5 +8,5 @@
 #rm a.out
 
 gcc -g -o matrix matrix.c -O0
-valgrind --tool=memcheck --leak-check=full --show-leak-kinds=all ./matrix
+./matrix
 

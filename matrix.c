@@ -3,13 +3,30 @@
 //
 #include <stdint.h>
 #include <stdio.h>
+#include <string.h>
 #include <stdlib.h>
+#include <time.h>
+#include <i386/limits.h>
 
-#define NTHREADS 32
+#define NTHREADS 1024
+#define C_DEBUG
+//#define DO_PRINT
+//#define C_USEMAX
 
-static int num_nodes = 4;
+int num_nodes = 4, cliques_size;
 
-int link_sched_comm[NTHREADS][NTHREADS] = {
+struct clique {
+    int pids[NTHREADS];
+    int size;
+    enum {
+        C_VALID, C_REUSE, C_INVALID
+    } flag;
+} cliques[NTHREADS];
+
+
+int link_sched_comm[NTHREADS][NTHREADS];
+
+/* = {
         {0,  12, 5,  3,  0,  1,  1,  1,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  1, 0, 0, 0, 1,  0,  0,  0,  0,  1,  0,  1,  4,  11},
         {12, 0,  12, 2,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  0,  0,  0,  0,  1,  0,  1,  0},
         {5,  12, 0,  12, 1,  4,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  0,  0,  0,  0,  0,  0,  1,  1},
@@ -42,7 +59,7 @@ int link_sched_comm[NTHREADS][NTHREADS] = {
         {1,  0,  0,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  2,  2,  1,  4,  10, 0,  15, 2},
         {4,  1,  1,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  0,  0,  0,  4,  1,  15, 0,  13},
         {11, 0,  1,  1,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  2,  0,  0,  1,  1,  2,  13, 0}
-};
+}; */
 
 static void link_sched_print_matrix(int k[][NTHREADS]) {
     int i, j;
@@ -56,78 +73,176 @@ static void link_sched_print_matrix(int k[][NTHREADS]) {
     printf("======[ matrix ]======\n");
 }
 
-typedef struct {
-    int *pids;
-    size_t size;
-} clique_t;
-
-typedef struct {
-    clique_t **csp;
-    size_t size;
-
-} cliques_t;
-
-void print_clique(clique_t *c) {
-    size_t size, i;
-    if (c) {
-        size = c->size;
-        printf("{");
-        for (i = 0; i < size; ++i) {
-            printf("%d ", c->pids[i]);
-        }
-        printf("}\n");
-    } else {
-        printf("NULL in print_clique!\n");
-    }
-}
-
-void print_cliques(cliques_t *cliques) {
-    size_t size, i;
-    if (cliques) {
-        size = cliques->size;
-        for (i = 0; i < size; ++i) {
-            print_clique(cliques->csp[i]);
-        }
-    } else {
-        printf("NULL in print_cliques!\n");
-    }
-}
-
-int clique_distance(clique_t *c1, clique_t *c2) {
-    int distance = 0, i, j;
+int clique_distance(struct clique *c1, struct clique *c2) {
+    // printf("[%s]\n", __FUNCTION__);
+    int ret = 0, i, j;
     if (c1 && c2) {
+#ifndef C_USEMAX
         for (i = 0; i < c1->size; ++i) {
             for (j = 0; j < c2->size; ++j) {
-                distance += link_sched_comm[c1->pids[i]][c2->pids[j]];
+                ret += link_sched_comm[c1->pids[i]][c2->pids[j]];
             }
         }
+#else
+        for (i = 0; i < c1->size; ++i) {
+            for (j = 0; j < c2->size; ++j) {
+                if (ret < link_sched_comm[c1->pids[i]][c2->pids[j]]) {
+                    ret = link_sched_comm[c1->pids[i]][c2->pids[j]];
+                }
+            }
+        }
+#endif
     } else {
-        printf("NULL in clique_distance!\n");
+        printf("clique_distance: NULL pointer\n");
+        ret = -1;
     }
-    return distance;
+    return ret;
+}
+
+void init_cliques(void) {
+    // printf("[%s]\n", __FUNCTION__);
+    int i;
+    for (i = 0; i < NTHREADS; ++i) {
+        cliques[i].pids[0] = i;
+        cliques[i].size = 1;
+        cliques[i].flag = C_VALID;
+    }
+    cliques_size = NTHREADS;
+}
+
+void print_clique(struct clique *c) {
+#ifdef DO_PRINT
+    int j;
+//    switch (c->flag) {
+//        case C_VALID:
+//            printf("VALID ");
+//            break;
+//        case C_REUSE:
+//            printf("REUSE ");
+//            break;
+//        case C_INVALID:
+//            printf("INVALID ");
+//            break;
+//    }
+    if (c->flag == C_VALID) {
+        printf("{");
+        for (j = 0; j < c->size; ++j) {
+            printf("%d ", c->pids[j]);
+        }
+        printf("}\n");
+    }
+#endif
+}
+
+void print_cliques(void) {
+    // printf("[%s]\n", __FUNCTION__);
+#ifdef DO_PRINT
+    int i;
+    printf("-------------------------------------------------------\n");
+    for (i = 0; i < NTHREADS; ++i) {
+        print_clique(cliques + i);
+    }
+#endif
+}
+
+void merge_clique(struct clique *c1, struct clique *c2) {
+    // printf("[%s]\n", __FUNCTION__);
+    if (c1 && c2) {
+#ifdef DO_PRINT
+        printf("Merging: ");
+        print_clique(c1);
+        print_clique(c2);
+        printf("\n");
+#endif
+        memcpy(c1->pids + c1->size, c2->pids, sizeof(int) * c2->size);
+        c1->size = c1->size + c2->size;
+        c1->flag = C_REUSE;
+        c2->flag = C_INVALID;
+        cliques_size -= 2;
+    } else {
+        printf("merge_clique: NULL pointer\n");
+    }
+}
+
+struct clique *get_first_valid(void) {
+    // printf("[%s]\n", __FUNCTION__);
+    struct clique *ret = cliques;
+    while (ret->flag != C_VALID) {
+        ret++;
+        if (ret == cliques + NTHREADS) {
+            printf("get_first_valid: NO valid clique\n");
+            return NULL;
+        }
+    }
+    return ret;
+}
+
+struct clique *find_neighbor(struct clique *c1) {
+    // printf("[%s]\n", __FUNCTION__);
+    struct clique *c2, *temp = cliques;
+    int distance = -1, temp_int;
+    while (temp < cliques + NTHREADS) {
+        if (temp != c1 && temp->flag == C_VALID) {
+            temp_int = clique_distance(c1, temp);
+            if (temp_int > distance) {
+                distance = temp_int;
+                c2 = temp;
+            }
+        }
+        temp++;
+    }
+    return c2;
+}
+
+void reset_cliques(void) {
+    // printf("[%s]\n", __FUNCTION__);
+    struct clique *temp = cliques;
+    while (temp < cliques + NTHREADS) {
+        if (temp->flag == C_REUSE) {
+            temp->flag = C_VALID;
+            ++cliques_size;
+        }
+        temp++;
+    }
+}
+
+void init_matrix(void) {
+    int i, j;
+    srand((unsigned) time(NULL));
+    for (i = 0; i < NTHREADS; ++i) {
+        for (j = 0; j < NTHREADS; ++j) {
+            link_sched_comm[i][j] = rand() % 10000;
+        }
+    }
 }
 
 int main() {
-    int i;
-    cliques_t *cliques;
-    clique_t **cliques_temp;
-
-    cliques = (cliques_t *) malloc(sizeof(cliques_t));
-    cliques->size = NTHREADS;
-    cliques->csp = (clique_t **) malloc(sizeof(clique_t*) * NTHREADS);
-    cliques_temp = (clique_t **) malloc(sizeof(clique_t*) * NTHREADS / 2);
-
-    for (i = 0;i< cliques->size; ++i) {
-        cliques->csp[i] = (clique_t *) malloc(sizeof(clique_t))
-    }
-
+    struct clique *c1, *c2;
+#ifdef C_DEBUG
+    clock_t start, stop;
+#endif
+    init_matrix();
+#ifdef DO_PRINT
     link_sched_print_matrix(link_sched_comm);
-
-    while (cliques->size > num_nodes) {
-        printf("----------------\n");
-
+#endif
+    init_cliques();
+#ifdef C_DEBUG
+    print_cliques();
+    start = clock();
+#endif
+    while (cliques_size > num_nodes) {
+        while (cliques_size > 0) {
+            c1 = get_first_valid();
+            c2 = find_neighbor(c1);
+            merge_clique(c1, c2);
+        }
+        reset_cliques();
+#ifdef C_DEBUG
+        print_cliques();
+#endif
     }
-
-    free_cliques(cliques);
-    free(cliques_temp);
+#ifdef C_DEBUG
+    stop = clock();
+    printf("Time consumed: %f\n", (double) (stop - start) / CLK_TCK);
+#endif
 }
