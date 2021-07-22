@@ -6,11 +6,11 @@
 #include <string.h>
 #include <stdlib.h>
 #include <time.h>
-#include <i386/limits.h>
 
-#define NTHREADS 1024
-#define C_DEBUG
-//#define DO_PRINT
+#define NTHREADS 32
+#define C_PRINT
+#define C_TIME
+#define VALID_ONLY
 //#define C_USEMAX
 
 int num_nodes = 4, cliques_size;
@@ -23,10 +23,8 @@ struct clique {
     } flag;
 } cliques[NTHREADS];
 
-
-int link_sched_comm[NTHREADS][NTHREADS];
-
-/* = {
+// communication rates between threads
+int link_sched_comm[NTHREADS][NTHREADS] = {
         {0,  12, 5,  3,  0,  1,  1,  1,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  1, 0, 0, 0, 1,  0,  0,  0,  0,  1,  0,  1,  4,  11},
         {12, 0,  12, 2,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  0,  0,  0,  0,  1,  0,  1,  0},
         {5,  12, 0,  12, 1,  4,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  0,  0,  0,  0,  0,  0,  1,  1},
@@ -59,7 +57,9 @@ int link_sched_comm[NTHREADS][NTHREADS];
         {1,  0,  0,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  2,  2,  1,  4,  10, 0,  15, 2},
         {4,  1,  1,  0,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  0,  0,  0,  4,  1,  15, 0,  13},
         {11, 0,  1,  1,  0,  0,  0,  0,  0, 0,  0,  0,  0,  0,  0, 0,  0,  0,  0, 0, 0, 0, 0,  0,  2,  0,  0,  1,  1,  2,  13, 0}
-}; */
+};
+
+#ifdef C_PRINT
 
 static void link_sched_print_matrix(int k[][NTHREADS]) {
     int i, j;
@@ -72,6 +72,62 @@ static void link_sched_print_matrix(int k[][NTHREADS]) {
     }
     printf("======[ matrix ]======\n");
 }
+
+static void print_clique_sizes(void) {
+    int i;
+    for (i = 0; i < NTHREADS; ++i) {
+        if (cliques[i].flag == C_VALID) {
+            printf("%d ", cliques[i].size);
+        }
+    }
+    printf("\n");
+}
+
+int print_clique(struct clique *c) {
+    int j;
+#ifdef VALID_ONLY
+    if (c->flag == C_VALID) {
+        printf("{");
+        for (j = 0; j < c->size; ++j) {
+            printf("%d ", c->pids[j]);
+        }
+        printf("}");
+        return 0;
+    }
+    return -1;
+#endif
+    switch (c->flag) {
+        case C_VALID:
+            printf("VALID ");
+            break;
+        case C_REUSE:
+            printf("REUSE ");
+            break;
+        case C_INVALID:
+            printf("INVALID ");
+            break;
+    }
+    printf("{");
+    for (j = 0; j < c->size; ++j) {
+        printf("%d ", c->pids[j]);
+    }
+    printf("}");
+    return 0;
+}
+
+void print_cliques(void) {
+    // printf("[%s]\n", __FUNCTION__);
+    int i, r;
+    printf("-------------------------------------------------------\n");
+    for (i = 0; i < NTHREADS; ++i) {
+        r = print_clique(cliques + i);
+        if (r == 0) {
+            printf("\n");
+        }
+    }
+}
+
+#endif // C_PRINT
 
 int clique_distance(struct clique *c1, struct clique *c2) {
     // printf("[%s]\n", __FUNCTION__);
@@ -99,66 +155,32 @@ int clique_distance(struct clique *c1, struct clique *c2) {
     return ret;
 }
 
-void init_cliques(void) {
-    // printf("[%s]\n", __FUNCTION__);
-    int i;
-    for (i = 0; i < NTHREADS; ++i) {
-        cliques[i].pids[0] = i;
-        cliques[i].size = 1;
-        cliques[i].flag = C_VALID;
-    }
-    cliques_size = NTHREADS;
-}
-
-void print_clique(struct clique *c) {
-#ifdef DO_PRINT
-    int j;
-//    switch (c->flag) {
-//        case C_VALID:
-//            printf("VALID ");
-//            break;
-//        case C_REUSE:
-//            printf("REUSE ");
-//            break;
-//        case C_INVALID:
-//            printf("INVALID ");
-//            break;
-//    }
-    if (c->flag == C_VALID) {
-        printf("{");
-        for (j = 0; j < c->size; ++j) {
-            printf("%d ", c->pids[j]);
-        }
-        printf("}\n");
-    }
-#endif
-}
-
-void print_cliques(void) {
-    // printf("[%s]\n", __FUNCTION__);
-#ifdef DO_PRINT
-    int i;
-    printf("-------------------------------------------------------\n");
-    for (i = 0; i < NTHREADS; ++i) {
-        print_clique(cliques + i);
-    }
-#endif
-}
-
 void merge_clique(struct clique *c1, struct clique *c2) {
     // printf("[%s]\n", __FUNCTION__);
     if (c1 && c2) {
-#ifdef DO_PRINT
+#ifdef C_PRINT
         printf("Merging: ");
         print_clique(c1);
         print_clique(c2);
         printf("\n");
 #endif
-        memcpy(c1->pids + c1->size, c2->pids, sizeof(int) * c2->size);
-        c1->size = c1->size + c2->size;
-        c1->flag = C_REUSE;
-        c2->flag = C_INVALID;
-        cliques_size -= 2;
+        if (c1->flag != C_VALID) {
+            if (c2->flag == C_VALID) {
+                c2->flag = C_REUSE;
+                cliques_size--;
+            }
+        } else {
+            if (c2->flag != C_VALID) {
+                c1->flag = C_REUSE;
+                cliques_size--;
+            } else {
+                memcpy(c1->pids + c1->size, c2->pids, sizeof(int) * c2->size);
+                c1->size = c1->size + c2->size;
+                c1->flag = C_REUSE;
+                c2->flag = C_INVALID;
+                cliques_size -= 2;
+            }
+        }
     } else {
         printf("merge_clique: NULL pointer\n");
     }
@@ -206,30 +228,43 @@ void reset_cliques(void) {
     }
 }
 
+void init_cliques(void) {
+    // printf("[%s]\n", __FUNCTION__);
+    int i;
+    for (i = 0; i < NTHREADS; ++i) {
+        cliques[i].pids[0] = i;
+        cliques[i].size = 1;
+        cliques[i].flag = C_VALID;
+    }
+    cliques_size = NTHREADS;
+}
+
 void init_matrix(void) {
     int i, j;
     srand((unsigned) time(NULL));
     for (i = 0; i < NTHREADS; ++i) {
         for (j = 0; j < NTHREADS; ++j) {
-            link_sched_comm[i][j] = rand() % 10000;
+            link_sched_comm[i][j] = rand() % 100000;
         }
     }
 }
 
 int main() {
     struct clique *c1, *c2;
-#ifdef C_DEBUG
-    clock_t start, stop;
+#ifdef C_TIME
+    clock_t start, stop, sum = 0;
 #endif
-    init_matrix();
-#ifdef DO_PRINT
-    link_sched_print_matrix(link_sched_comm);
-#endif
+//    init_matrix();
     init_cliques();
-#ifdef C_DEBUG
+#ifdef C_PRINT
+    link_sched_print_matrix(link_sched_comm);
     print_cliques();
+#endif
+
+#ifdef C_TIME
     start = clock();
 #endif
+
     while (cliques_size > num_nodes) {
         while (cliques_size > 0) {
             c1 = get_first_valid();
@@ -237,12 +272,23 @@ int main() {
             merge_clique(c1, c2);
         }
         reset_cliques();
-#ifdef C_DEBUG
+#ifdef C_TIME
+        stop = clock();
+        sum += stop - start;
+#endif
+#ifdef C_PRINT
+        printf("cliques: \n");
         print_cliques();
+        printf("cliques_size: %d, with ", cliques_size);
+        print_clique_sizes();
+#endif
+#ifdef C_TIME
+        start = clock();
 #endif
     }
-#ifdef C_DEBUG
+#ifdef C_TIME
     stop = clock();
-    printf("Time consumed: %f\n", (double) (stop - start) / CLK_TCK);
+    sum += stop - start;
+    printf("Time consumed: %f ms\n", (double) sum / CLOCKS_PER_SEC * 1000);
 #endif
 }
