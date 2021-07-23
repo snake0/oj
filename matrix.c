@@ -13,7 +13,10 @@
 #define VALID_ONLY
 //#define C_USEMAX
 
-int num_nodes = 4, cliques_size;
+int num_nodes = 2, cliques_size;
+
+static int threads_chosen[NTHREADS];
+static int cores_per_node = 8;
 
 struct clique {
     int pids[NTHREADS];
@@ -249,6 +252,31 @@ void init_matrix(void) {
     }
 }
 
+void assign_cpus_for_clique(struct clique *c, int node) {
+    int cpu_curr = cores_per_node * node, size = c->size, *pids = c->pids, i;
+    for (i = 0; i < size; ++i) {
+        threads_chosen[pids[i]] = cpu_curr++;
+        if (cpu_curr == (node + 1) * cores_per_node) {
+            cpu_curr = cores_per_node * node;
+        }
+    }
+}
+
+void calculate_threads_chosen(void) {
+    int i, node = 0;
+    for (i = 0; i < NTHREADS; ++i) {
+        if (cliques[i].flag == C_VALID) {
+            assign_cpus_for_clique(cliques + i, node++);
+        }
+    }
+#ifdef C_PRINT
+    printf("Threads chosen:\n");
+    for (i = 0; i < NTHREADS; ++i) {
+        printf("%d -> %d\n", i, threads_chosen[i]);
+    }
+#endif
+}
+
 int main() {
     struct clique *c1, *c2;
 #ifdef C_TIME
@@ -291,4 +319,5 @@ int main() {
     sum += stop - start;
     printf("Time consumed: %f ms\n", (double) sum / CLOCKS_PER_SEC * 1000);
 #endif
+    calculate_threads_chosen();
 }
